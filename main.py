@@ -8,15 +8,17 @@ load_dotenv()
 # Initialize client
 client = genai.Client()
 
-if len(sys.argv) > 1:
-    prompt = " ".join(sys.argv[1:])
-else:
-    prompt = input("Enter your prompt: ")
+def ask_llm(user_input):
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=user_input,
+    )
+    return response.text
+    
 
-response = client.models.generate_content(
-    model="gemini-2.5-flash",
-    contents=prompt,
-)
+user_input = input("Enter your prompt: ")
+
+output = ask_llm(user_input)
 
 print("\n--- LLM Response ---")
-print(response.text)
+print(output)
