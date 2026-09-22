@@ -1,50 +1,54 @@
 import sys
 import json
 from dotenv import load_dotenv
-from google import genai
-from google.genai import types
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import SystemMessage, HumanMessage
 
-# Load environment variables (.env file with GEMINI_API_KEY)
+# 1. Load environment variables (.env file containing GEMINI_API_KEY)
 load_dotenv()
 
-# Initialize client
-client = genai.Client()
-
+# 2. Helper function to load student dataset from JSON
 def load_students(file_path: str = "students.json"):
-    """Loads student records from a local JSON file."""
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             return json.load(f)
     except FileNotFoundError:
-        print(f"Error: Could not find '{file_path}'. Make sure it exists in the same folder.")
+        print(f"Error: Could not find '{file_path}'. Make sure it exists in the project root.")
         sys.exit(1)
 
-# Load student records from JSON
+# Load student records
 students_data = load_students("students.json")
 
-# Formulate system prompt including the JSON database context
-SYSTEM_INSTRUCTION = f"""
-You are an AI Student Management Assistant. 
+# 3. Initialize Gemini through LangChain
+# LangChain automatically looks for GEMINI_API_KEY in environment variables
+llm = ChatGoogleGenerativeAI(
+    model="gemini-2.5-flash",
+    temperature=0.2
+)
+
+# 4. Construct System Message with student database context
+system_instruction = f"""
+You are an AI Student Management Assistant powered by LangChain.
 You have access to the following student database (JSON format):
 
 {json.dumps(students_data, indent=2)}
 
 Guidelines:
 1. Answer the user's questions accurately using ONLY the student information provided in the database above.
-2. Maintain a helpful, concise, and professional tone.
-3. If asked about a student who isn't in the database or skills/details not listed, state clearly that the information is not found in the database.
+2. Maintain a professional and concise tone.
+3. If asked about information not present in the database, explicitly state that it was not found.
 """
 
 def ask_llm(user_input: str) -> str:
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=user_input,
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_INSTRUCTION,
-            temperature=0.2,  # Low temperature keeps answers factual based on JSON
-        ),
-    )
-    return response.text
+    """Sends messages array (System + Human) to Gemini via LangChain."""
+    messages = [
+        SystemMessage(content=system_instruction),
+        HumanMessage(content=user_input)
+    ]
+    
+    # LangChain invoke returns an AIMessage object; .content gives the text string
+    response = llm.invoke(messages)
+    return response.content
 
 
 if __name__ == "__main__":
@@ -53,7 +57,13 @@ if __name__ == "__main__":
     else:
         user_input = input("Enter your question about students: ")
 
+    if not user_input.strip():
+        user_input = "Show me all students who know Python."
+
+    print(f"\nPrompt: {user_input}")
+    
+    # Run query through LangChain model
     output = ask_llm(user_input)
 
-    print("\n--- LLM Response ---")
+    print("\n--- LangChain Response ---")
     print(output)
