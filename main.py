@@ -1,11 +1,12 @@
 import sys
 import json
+import os
 from typing import Optional, Any, Dict, List
-from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.tools import tool
+from langchain_core.messages import HumanMessage, SystemMessage
 
 # 1. Load environment variables (.env file containing GEMINI_API_KEY)
 load_dotenv()
@@ -27,86 +28,118 @@ def save_students(data: List[Dict[str, Any]], file_path: str = STUDENTS_FILE):
 students_data = load_students()
 
 
-# 2. Define the Structured Output format using Pydantic
-class CRUDInstruction(BaseModel):
-    action: str = Field(description="Action: 'CREATE', 'READ', 'UPDATE', 'DELETE', or 'UNKNOWN'")
-    student_id: Optional[Any] = Field(None, description="The ID of the student")
-    data: Optional[Dict[str, Any]] = Field(None, description="Student details for CREATE or UPDATE")
+# ==========================================
+# TASK 2: Expose CRUD functions as LangChain @tool
+# ==========================================
 
-
-# 3. Initialize Gemini with Structured Output
-llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.0)
-structured_llm = llm.with_structured_output(CRUDInstruction)
-
-
-# 4. Define Prompt Template
-prompt = ChatPromptTemplate.from_messages([
-    ("system", """You are an AI Database Assistant. Interpret the user's request into a CRUD command.
-    
-Actions:
-- CREATE: Adding a new student. Put student fields into 'data'.
-- READ: Viewing or searching student info.
-- UPDATE: Changing details of an existing student. Provide 'student_id' and updated 'data'.
-- DELETE: Removing a student. Provide 'student_id'.
-- UNKNOWN: Request is not related to CRUD.
-"""),
-    ("human", "{user_input}")
-])
-
-# Create the LangChain processing chain
-crud_chain = prompt | structured_llm
-
-
-# 5. Python Database Executor
-def execute_crud(instruction: CRUDInstruction) -> str:
+@tool
+def create_student(student_id: Any, name: str, age: Optional[int] = None, skills: Optional[List[str]] = None) -> str:
+    """Creates/adds a new student record to students.json. Requires student_id and name."""
     global students_data
-    action = instruction.action.upper()
-
-    # --- CREATE ---
-    if action == "CREATE":
-        new_student = instruction.data or {}
-        if instruction.student_id and "id" not in new_student:
-            new_student["id"] = instruction.student_id
-            
-        students_data.append(new_student)
-        save_students(students_data)
-        return f"Added student: {new_student}"
-
-    # --- READ ---
-    elif action == "READ":
-        if instruction.student_id is not None:
-            matches = [s for s in students_data if str(s.get("id")).lower() == str(instruction.student_id).lower()]
-            return json.dumps(matches, indent=2) if matches else " Student not found."
-        return json.dumps(students_data, indent=2)
-
-    # --- UPDATE ---
-    elif action == "UPDATE":
-        if instruction.student_id is None:
-            return " Need a student_id to perform update."
+    
+    # Check for existing duplicate ID
+    if any(str(s.get("id")) == str(student_id) for s in students_data):
+        return f"Error: Student with ID {student_id} already exists."
+    
+    new_student = {
+        "id": student_id,
+        "name": name
+    }
+    if age is not None:
+        new_student["age"] = age
+    if skills is not None:
+        new_student["skills"] = skills
         
-        for s in students_data:
-            if str(s.get("id")) == str(instruction.student_id):
-                if instruction.data:
-                    s.update(instruction.data)
-                save_students(students_data)
-                return f" Updated student ID {instruction.student_id}."
-        return f" Student ID {instruction.student_id} not found."
+    students_data.append(new_student)
+    save_students(students_data)
+    return f"Successfully added student: {new_student}"
 
-    # --- DELETE ---
-    elif action == "DELETE":
-        if instruction.student_id is None:
-            return "Need a student_id to perform delete."
-        
-        initial_length = len(students_data)
-        students_data = [s for s in students_data if str(s.get("id")) != str(instruction.student_id)]
-        
-        if len(students_data) < initial_length:
+@tool
+def read_student(student_id: Optional[Any] = None) -> str:
+    """Reads or searches student details. Pass student_id to get a specific student, or leave empty to list all."""
+    global students_data
+    if student_id is not None:
+        matches = [s for s in students_data if str(s.get("id")).lower() == str(student_id).lower()]
+        return json.dumps(matches, indent=2) if matches else f"Student with ID '{student_id}' not found."
+    return json.dumps(students_data, indent=2)
+
+@tool
+def update_student(student_id: Any, name: Optional[str] = None, age: Optional[int] = None, skills: Optional[List[str]] = None) -> str:
+    """Updates an existing student's details in students.json using their student_id."""
+    global students_data
+    for s in students_data:
+        if str(s.get("id")) == str(student_id):
+            if name is not None:
+                s["name"] = name
+            if age is not None:
+                s["age"] = age
+            if skills is not None:
+                s["skills"] = skills
             save_students(students_data)
-            return f" Deleted student ID {instruction.student_id}."
-        return f" Student ID {instruction.student_id} not found."
+            return f"Successfully updated student ID {student_id}: {s}"
+    return f"Student ID {student_id} not found."
 
+@tool
+def delete_student(student_id: Any) -> str:
+    """Deletes a student record from students.json by student_id."""
+    global students_data
+    initial_length = len(students_data)
+    students_data = [s for s in students_data if str(s.get("id")) != str(student_id)]
+    
+    if len(students_data) < initial_length:
+        save_students(students_data)
+        return f"Successfully deleted student ID {student_id}."
+    return f"Student ID {student_id} not found."
+
+
+# Package all tools into a list
+tools = [create_student, read_student, update_student, delete_student]
+
+
+# ==========================================
+# TASK 3: Connect tools to Gemini and execute
+# ==========================================
+
+# 1. Initialize Gemini Model
+llm = ChatGoogleGenerativeAI(model="gemini-3.5-flash", temperature=0.0)
+
+# 2. Bind the tools to the Gemini model
+llm_with_tools = llm.bind_tools(tools)
+
+def run_agent(user_input: str):
+    """Passes user query to model, inspects tool choices, and executes the selected tool function."""
+    messages = [
+        SystemMessage(content="You are a helpful student database manager. Use the provided tools to execute student CRUD operations."),
+        HumanMessage(content=user_input)
+    ]
+    
+    # Let Gemini decide which tool to call and with what arguments
+    ai_msg = llm_with_tools.invoke(messages)
+    
+    # If Gemini decided to call a tool:
+    if ai_msg.tool_calls:
+        print("\n--- Tool Calls ---")
+        tool_map = {
+            "create_student": create_student,
+            "read_student": read_student,
+            "update_student": update_student,
+            "delete_student": delete_student
+        }
+        
+        for tool_call in ai_msg.tool_calls:
+            tool_name = tool_call["name"]
+            tool_args = tool_call["args"]
+            print(f"Tool Name: {tool_name}")
+            print(f"Arguments: {tool_args}")
+            
+            # Execute the tool function pythonically
+            selected_tool = tool_map[tool_name]
+            result = selected_tool.invoke(tool_args)
+            print("\n---  Output ---")
+            print(result)
     else:
-        return " Could not understand the CRUD action."
+        print("\n--- Direct Response (No Tool Call Needed) ---")
+        print(ai_msg.content)
 
 
 if __name__ == "__main__":
@@ -116,14 +149,4 @@ if __name__ == "__main__":
         user_input = "Add a new student named Rahul with ID 105 who knows Python and FastAPI."
 
     print(f"\nUser Command: '{user_input}'")
-
-    # Step A: Let Gemini parse the command into structured format
-    parsed_intent: CRUDInstruction = crud_chain.invoke({"user_input": user_input})
-    print(f"\nParsed Action: {parsed_intent.action}")
-    print(f"Parsed ID: {parsed_intent.student_id}")
-    print(f"Parsed Data: {parsed_intent.data}")
-
-    # Step B: Let Python update the actual file
-    output = execute_crud(parsed_intent)
-    print("\n--- Result ---")
-    print(output)
+    run_agent(user_input)
