@@ -1,26 +1,48 @@
 [
   {
-    "student_id": "S101",
+    "id": "S101",
     "name": "Arjun Kumar",
-    "skills": ["Python", "FastAPI", "SQL"],
+    "skills": [
+      "Python",
+      "FastAPI",
+      "SQL"
+    ],
     "bio": "Backend developer interested in AI and distributed systems."
   },
   {
-    "student_id": "S102",
+    "id": "S102",
     "name": "Priya Sharma",
-    "skills": ["Python", "Machine Learning", "TensorFlow"],
+    "skills": [
+      "Python",
+      "Machine Learning",
+      "TensorFlow"
+    ],
     "bio": "Computer science student interested in machine learning and NLP."
   },
   {
-    "student_id": "S103",
+    "id": "S103",
     "name": "Rahul Verma",
-    "skills": ["JavaScript", "React", "Node.js"],
+    "skills": [
+      "JavaScript",
+      "React",
+      "Node.js"
+    ],
     "bio": "Frontend-focused student who enjoys building web applications."
   },
   {
-    "student_id": "S104",
+    "id": "S104",
     "name": "Sneha Reddy",
-    "skills": ["Python", "SQL", "Data Analysis"],
+    "skills": [
+      "Python",
+      "SQL",
+      "Data Analysis"
+    ],
     "bio": "Data-oriented student interested in analytics and visualization."
+  },
+  {
+    "name": "kethan",
+    "skills": "sql,numbers",
+    "bio": "intreseted in playing",
+    "id": "s105"
   }
 ]

@@ -70,47 +70,47 @@ def execute_crud(instruction: CRUDInstruction) -> str:
             
         students_data.append(new_student)
         save_students(students_data)
-        return f"✅ Added student: {new_student}"
+        return f"Added student: {new_student}"
 
     # --- READ ---
     elif action == "READ":
         if instruction.student_id is not None:
-            matches = [s for s in students_data if str(s.get("id")) == str(instruction.student_id)]
-            return json.dumps(matches, indent=2) if matches else "❌ Student not found."
+            matches = [s for s in students_data if str(s.get("id")).lower() == str(instruction.student_id).lower()]
+            return json.dumps(matches, indent=2) if matches else " Student not found."
         return json.dumps(students_data, indent=2)
 
     # --- UPDATE ---
     elif action == "UPDATE":
         if instruction.student_id is None:
-            return "❌ Need a student_id to perform update."
+            return " Need a student_id to perform update."
         
         for s in students_data:
             if str(s.get("id")) == str(instruction.student_id):
                 if instruction.data:
                     s.update(instruction.data)
                 save_students(students_data)
-                return f"✅ Updated student ID {instruction.student_id}."
-        return f"❌ Student ID {instruction.student_id} not found."
+                return f" Updated student ID {instruction.student_id}."
+        return f" Student ID {instruction.student_id} not found."
 
     # --- DELETE ---
     elif action == "DELETE":
         if instruction.student_id is None:
-            return "❌ Need a student_id to perform delete."
+            return "Need a student_id to perform delete."
         
         initial_length = len(students_data)
         students_data = [s for s in students_data if str(s.get("id")) != str(instruction.student_id)]
         
         if len(students_data) < initial_length:
             save_students(students_data)
-            return f"✅ Deleted student ID {instruction.student_id}."
-        return f"❌ Student ID {instruction.student_id} not found."
+            return f" Deleted student ID {instruction.student_id}."
+        return f" Student ID {instruction.student_id} not found."
 
     else:
-        return "⚠️ Could not understand the CRUD action."
+        return " Could not understand the CRUD action."
 
 
 if __name__ == "__main__":
-    user_input = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else input("Enter CRUD command: ")
+    user_input = input("Enter CRUD command: ")
 
     if not user_input.strip():
         user_input = "Add a new student named Rahul with ID 105 who knows Python and FastAPI."
