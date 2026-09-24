@@ -30,17 +30,7 @@
     "bio": "Frontend-focused student who enjoys building web applications."
   },
   {
-    "id": "S104",
-    "name": "Sneha Reddy",
-    "skills": [
-      "Python",
-      "SQL",
-      "Data Analysis"
-    ],
-    "bio": "Data-oriented student interested in analytics and visualization."
-  },
-  {
-    "name": "kethan",
+    "name": "sai kethan",
     "skills": "sql,numbers",
     "bio": "intreseted in playing",
     "id": "s105"
