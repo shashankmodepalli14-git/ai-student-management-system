@@ -15,7 +15,8 @@
     "skills": [
       "Python",
       "Machine Learning",
-      "TensorFlow"
+      "TensorFlow",
+      "FastAPI"
     ],
     "bio": "Computer science student interested in machine learning and NLP."
   },
