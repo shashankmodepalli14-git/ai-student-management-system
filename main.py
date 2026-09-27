@@ -1,12 +1,13 @@
 import sys
 import json
 import os
+import uuid
 from typing import Optional, Any, Dict, List
 from dotenv import load_dotenv
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.tools import tool
-from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage, BaseMessage
 
 # 1. Load environment variables (.env file containing GEMINI_API_KEY)
 load_dotenv()
@@ -129,68 +130,85 @@ tools = [create_student, read_student, update_student, delete_student]
 
 
 # ==========================================
-# TASK 3 & 4: Model Binding & Complete Loop
+# TASK 3, 4 & PHASE 4: Model Binding & Memory
 # ==========================================
 
 llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.0)
 llm_with_tools = llm.bind_tools(tools)
 
-def run_agent(user_input: str):
-    """Executes the complete ReAct loop: User -> LLM -> Tool Execution -> ToolMessage -> Final LLM Response."""
+# Global dictionary to store message history across active chat sessions
+sessions: Dict[str, List[BaseMessage]] = {}
+
+def get_or_create_session(session_id: str) -> List[BaseMessage]:
+    """Retrieves existing history for a session or initializes a new session with SystemMessage."""
+    if session_id not in sessions:
+        sessions[session_id] = [
+            SystemMessage(content="You are a helpful student database manager. Use the provided tools to execute student CRUD operations and summarize tool results clearly for the user.")
+        ]
+    return sessions[session_id]
+
+def run_agent(session_id: str, user_input: str):
+    """Executes the ReAct loop maintaining context in memory via session_id."""
     
-    messages = [
-        SystemMessage(content="You are a helpful student database manager. Use the provided tools to execute student CRUD operations and summarize tool results clearly for the user."),
-        HumanMessage(content=user_input)
-    ]
+    messages = get_or_create_session(session_id)
+    messages.append(HumanMessage(content=user_input))
     
-    # 1. First pass: User -> LLM
-    ai_msg = llm_with_tools.invoke(messages)
-    messages.append(ai_msg)
+    tool_map = {
+        "create_student": create_student,
+        "read_student": read_student,
+        "update_student": update_student,
+        "delete_student": delete_student
+    }
     
-    # 2. Check if LLM generated tool call requests
-    if ai_msg.tool_calls:
-        tool_map = {
-            "create_student": create_student,
-            "read_student": read_student,
-            "update_student": update_student,
-            "delete_student": delete_student
-        }
+    # Run dynamic tool invocation loop until agent reaches final text response
+    while True:
+        ai_msg = llm_with_tools.invoke(messages)
+        messages.append(ai_msg)
         
-        for tool_call in ai_msg.tool_calls:
-            tool_name = tool_call["name"]
-            tool_args = tool_call["args"]
-            tool_id = tool_call["id"]
-            
-            print(f"\n[Model Selected Tool: {tool_name} with args: {tool_args}]")
-            
-            selected_tool = tool_map[tool_name]
-            tool_result = selected_tool.invoke(tool_args)
-            
-            print(f"[Tool Result Output: {tool_result}]")
-            
-            messages.append(
-                ToolMessage(
-                    content=str(tool_result),
-                    tool_call_id=tool_id
+        # If model requests tool calls, execute them and feed back ToolMessages
+        if ai_msg.tool_calls:
+            for tool_call in ai_msg.tool_calls:
+                tool_name = tool_call["name"]
+                tool_args = tool_call["args"]
+                tool_id = tool_call["id"]
+                
+                print(f"\n[Model Selected Tool: {tool_name} with args: {tool_args}]")
+                
+                selected_tool = tool_map[tool_name]
+                tool_result = selected_tool.invoke(tool_args)
+                
+                print(f"[Tool Result Output: {tool_result}]")
+                
+                messages.append(
+                    ToolMessage(
+                        content=str(tool_result),
+                        tool_call_id=tool_id
+                    )
                 )
-            )
-        
-        # 3. Final pass: Send full message history back to LLM for final response synthesis
-        final_response = llm_with_tools.invoke(messages)
-        
-        print("\n--- Final Agent Response ---")
-        print(extract_text_content(final_response.content))
-        
-    else:
-        print("\n--- Direct Response (No Tool Call Needed) ---")
-        print(extract_text_content(ai_msg.content))
+        else:
+            # Final text answer reached, output to user
+            print("\n--- Agent Response ---")
+            print(extract_text_content(ai_msg.content))
+            break
 
 
 if __name__ == "__main__":
-    user_input = input("Enter CRUD command: ")
-
-    if not user_input.strip():
-        user_input = "Delete student with ID 105."
-
-    print(f"\nUser Command: '{user_input}'")
-    run_agent(user_input)
+    # Task 1: Generate unique session_id for current interactive run
+    session_id = str(uuid.uuid4())
+    print(f"Started Chat Session ID: {session_id}")
+    print("Type 'exit' or 'quit' to end the session.\n")
+    
+    while True:
+        try:
+            user_input = input("\nUser: ").strip()
+            if user_input.lower() in ["exit", "quit"]:
+                print("Ending session. Goodbye!")
+                break
+            if not user_input:
+                continue
+                
+            run_agent(session_id, user_input)
+            
+        except (KeyboardInterrupt, EOFError):
+            print("\nSession interrupted. Exiting.")
+            break
